@@ -21,12 +21,3 @@ export { detectIntent, isExplicitSave, type Intent } from './intent.js'
 export { parseReminderTime, type ReminderParseResult } from './reminder.js'
 export { ConversationMemoryStore, type ConversationMemoryOptions, type RedisLike } from './conversation-memory.js'
 export { reminderQueue, type ReminderJobData } from './reminder-queue.js'
-export {
-  classifyIntent,
-  routeAndRespond,
-  classifyAndRoute,
-  MemoryIntentSchema,
-  AgentReplySchema,
-  ROUTE_PROMPTS,
-  type MemoryIntentClassification
-} from './classifier.js'

@@ -1,0 +1,39 @@
+{
+  "name": "api",
+  "type": "module",
+  "scripts": {
+    "dev": "dotenv -e ../../.env -- tsx watch src/index.ts",
+    "worker": "dotenv -e ../../.env -- tsx src/worker.ts",
+    "bot": "dotenv -e ../../.env -- tsx src/bot.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",
+    "db:generate": "dotenv -e ../../.env -- prisma generate",
+    "db:studio": "dotenv -e ../../.env -- prisma studio",
+    "postinstall": "prisma skills sync || exit 0"
+  },
+  "dependencies": {
+    "@anvia/core": "^1.2.2",
+    "@anvia/mistral": "^1.1.3",
+    "@anvia/openai": "^1.1.3",
+    "@anvia/qdrant": "^1.1.3",
+    "@aws-sdk/client-s3": "^3.1131.0",
+    "@hono/node-server": "^2.1.1",
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.9.0",
+    "@qdrant/js-client-rest": "^1.19.0",
+    "bullmq": "^6.3.4",
+    "dotenv-cli": "^11.0.0",
+    "hono": "^4.13.7",
+    "ioredis": "^6.0.0",
+    "pg": "^8.23.0",
+    "undici": "^8.10.2",
+    "zod": "^4.6.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "prisma": "7.9.0",
+    "tsx": "^4.23.0",
+    "typescript": "^7.0.2"
+  }
+}

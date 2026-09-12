@@ -4,7 +4,6 @@
   "scripts": {
     "dev": "dotenv -e ../../.env -- tsx watch src/index.ts",
     "worker": "dotenv -e ../../.env -- tsx src/worker.ts",
-    "bot": "dotenv -e ../../.env -- tsx src/bot.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",

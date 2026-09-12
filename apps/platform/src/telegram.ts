@@ -5,6 +5,17 @@ export type TelegramUpdate = {
     chat: { id: number }
     from?: { id: number; username?: string; first_name?: string; last_name?: string }
     text?: string
+    caption?: string
+    /** Compressed image sent as photo. Always jpg after Telegram re-encode. */
+    photo?: Array<{ file_id: string; file_size?: number }>
+    /** File sent as document (any extension, incl. webp/png/jpg as-is). */
+    document?: {
+      file_id: string
+      file_name?: string
+      mime_type?: string
+      file_size?: number
+    }
+    sticker?: { file_id: string; is_animated: boolean; is_video: boolean }
   }
   callback_query?: {
     id: string
@@ -12,6 +23,22 @@ export type TelegramUpdate = {
     data?: string
     message?: { chat: { id: number }; message_id: number }
   }
+}
+
+const IMAGE_MIME_PREFIX = 'image/'
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif']
+
+export function imageDocumentMime(doc: { file_name?: string; mime_type?: string }): string | null {
+  if (doc.mime_type?.startsWith(IMAGE_MIME_PREFIX)) return doc.mime_type
+  const name = doc.file_name?.toLowerCase() ?? ''
+  if (IMAGE_EXTENSIONS.some((ext) => name.endsWith(ext))) {
+    if (name.endsWith('.png')) return 'image/png'
+    if (name.endsWith('.webp')) return 'image/webp'
+    if (name.endsWith('.bmp')) return 'image/bmp'
+    if (name.endsWith('.gif')) return 'image/gif'
+    return 'image/jpeg'
+  }
+  return null
 }
 
 type TelegramResponse<T> = { ok: boolean; result?: T; description?: string }

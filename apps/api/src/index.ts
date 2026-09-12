@@ -5,7 +5,6 @@ import { Hono } from 'hono'
 import { embeddingQueue } from './queue.js'
 import { deleteMemoryVector, searchMemoryVectors } from './vector.js'
 import { embedText } from './embed.js'
-import { createAgent } from './agent.js'
 
 const connectionString = process.env.DATABASE_URL
 if (!connectionString) throw new Error('DATABASE_URL is required')
@@ -53,39 +52,8 @@ function resolveUser(telegramUserId: bigint) {
 
 const app = new Hono()
 
-const agent = createAgent({ prisma })
-
 app.get('/', (c) => c.text('Second Brain API'))
 app.get('/health', (c) => c.json({ ok: true }))
-
-app.post('/agent', async (c) => {
-  const body = await c.req.json<{
-    telegramUserId?: string
-    chatId?: string
-    message?: string
-  }>().catch(() => null)
-  const tid = body?.telegramUserId
-  const message = body?.message?.trim()
-  if (!tid || !/^\d+$/.test(tid) || !message) {
-    return c.json({ error: 'telegramUserId (numeric) and message are required' }, 400)
-  }
-  console.log(`[agent] RUN user=${tid} message="${message.slice(0, 60)}"`)
-  try {
-    const response = await agent.generate({
-      prompt: `[telegramUserId: ${tid}${body?.chatId ? `, chatId: ${body.chatId}` : ''}]\n${message}`
-    })
-    if (response.type !== 'response') {
-      console.error(`[agent] FAILED user=${tid}: run outcome=${response.type}`)
-      return c.json({ error: 'Agent did not produce a response' }, 502)
-    }
-    console.log(`[agent] OK user=${tid} reply="${response.text.slice(0, 80)}"`)
-    return c.json({ reply: response.text })
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : 'Agent failed'
-    console.error(`[agent] FAILED user=${tid}: ${errMsg}`)
-    return c.json({ error: errMsg }, 502)
-  }
-})
 
 app.post('/memories', async (c) => {
   const body = await c.req.json<{

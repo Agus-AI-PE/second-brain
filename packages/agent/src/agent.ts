@@ -4,11 +4,18 @@ import { createSaveMemoryTool } from './tools/save-memory.js'
 import { createSearchMemoryTool } from './tools/search-memory.js'
 import { createSetReminderTool } from './tools/set-reminder.js'
 import { BASE_INSTRUCTIONS } from './prompts/base-instructions.js'
+import { createMemoryGuardrailPolicy } from './guardrails.js'
 import type { ToolDeps } from './types.js'
 
 export type CreateAgentOptions = ToolDeps & {
   model: CompletionModel
   id?: string
+  /**
+   * Optional LLM security classifier run on every input before the main model.
+   * Use a cheap fast model (nano/flash tier). Regex guardrails run first and
+   * free; the judge catches paraphrased injections regex misses.
+   */
+  judgeModel?: CompletionModel
   /** Optional conversation memory (multi-turn context). Host supplies storage. */
   memory?: AnviaMemoryStore
   /**
@@ -26,12 +33,15 @@ export type CreateAgentOptions = ToolDeps & {
 }
 
 export function createMemoryAgent(options: CreateAgentOptions): Agent {
-  const { store, embed, model, memory, scheduleReminder, trustedChatId, attachment } = options
+  const { store, embed, model, memory, scheduleReminder, trustedChatId, attachment, judgeModel } = options
   return new Agent({
     id: options.id ?? 'second-brain-assistant',
     model,
     instructions: BASE_INSTRUCTIONS,
+    temperature: 0.2,
+    maxTokens: 800,
     maxTurns: 6,
+    guardrails: createMemoryGuardrailPolicy(judgeModel),
     ...(memory ? { memory: { store: memory } } : {}),
     tools: [
       createSaveMemoryTool({ store, embed }, attachment),
@@ -79,6 +89,10 @@ export async function runAgent(
       session: { sessionId: `tg:${input.telegramUserId}`, userId: input.telegramUserId }
     })
     if (response.type !== 'response') {
+      if (response.type === 'blocked') {
+        console.log(`[agent] GUARDRAIL BLOCKED stage=${response.stage} reason=${response.reason}`)
+        return { ok: false, error: response.message ?? 'Permintaan diblokir oleh guardrail keamanan.' }
+      }
       return { ok: false, error: `Agent outcome: ${response.type}` }
     }
     return { ok: true, reply: response.text }

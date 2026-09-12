@@ -36,6 +36,12 @@ const model = createCompletionModel({
   modelId: process.env.AGENT_MODEL ?? 'gpt-5.6-luna'
 })
 
+// Cheap fast model as LLM injection judge (runs after regex guardrails).
+const judgeModel = process.env.JUDGE_MODEL
+  ? createCompletionModel({ baseUrl: openaiBaseUrl, apiKey: openaiApiKey, modelId: process.env.JUDGE_MODEL })
+  : undefined
+if (judgeModel) console.log(`[guardrail] LLM injection judge active: ${process.env.JUDGE_MODEL}`)
+
 /**
  * Build a per-request agent: set_reminder is bound to the chat the message
  * actually came from (trusted), never to an LLM-chosen chatId. When an
@@ -46,6 +52,7 @@ function agentFor(chatId: string, attachment?: { sourceUrl: string; sourceType: 
     store,
     embed: embedText,
     model,
+    judgeModel,
     memory: new ConversationMemoryStore({ redis, ttlSeconds: 24 * 60 * 60 }),
     trustedChatId: chatId,
     attachment,

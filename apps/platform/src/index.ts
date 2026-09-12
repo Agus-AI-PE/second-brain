@@ -9,6 +9,8 @@ import type { Agent } from '@anvia/core'
 import { PrismaMemoryStore } from './memory-store.js'
 import { embedText } from './embed.js'
 import { TelegramClient, imageDocumentMime } from './telegram.js'
+import { PrismaAccessStore } from './access-store.js'
+import { handleTelegramCallback, handleTelegramText } from './handler.js'
 
 const connectionString = process.env.DATABASE_URL
 if (!connectionString) throw new Error('DATABASE_URL is required')
@@ -26,6 +28,7 @@ if (!mistralApiKey) throw new Error('MISTRAL_API_KEY is required')
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
 const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', { maxRetriesPerRequest: null })
 const store = new PrismaMemoryStore(prisma, redis)
+const accessStore = new PrismaAccessStore(prisma)
 
 const model = createCompletionModel({
   baseUrl: openaiBaseUrl,
@@ -199,6 +202,49 @@ async function handleAttachment(
 async function handleMessage(msg: TgMessage): Promise<void> {
   if (!msg.from) return
   const chatId = msg.chat.id
+  const userId = String(msg.from.id)
+  const text = msg.text?.trim()
+  const adminIdNum = Number(adminTelegramId)
+
+  // --- Admin commands (only for ADMIN_TELEGRAM_ID) ---
+  const isAdminUser = userId === adminTelegramId
+  const isAdminCommand = isAdminUser && (
+    text === '/start' || ['/pending', '/approve', '/deny'].includes(text ?? '')
+  )
+
+  // Non-admin /start & /request_access → access request flow (bukan ke agent)
+  if (!isAdminUser && (text === '/start' || text === '/request_access')) {
+    const user = await prisma.user.findUnique({ where: { telegramUserId: BigInt(userId) } })
+    if (user?.accessStatus === 'APPROVED') {
+      await telegram.sendMessage(chatId, '✅ Akses sudah aktif. Langsung chat saja.')
+    } else if (user?.accessStatus === 'DENIED') {
+      await telegram.sendMessage(chatId, '❌ Akses kamu ditolak admin.')
+    } else {
+      if (!user) {
+        const created = await prisma.user.create({
+          data: {
+            telegramUserId: BigInt(userId),
+            username: msg.from.username,
+            displayName: msg.from.first_name,
+            accessStatus: 'PENDING'
+          }
+        })
+        await prisma.accessRequest.create({ data: { userId: created.id, status: 'PENDING' } })
+        console.log(`[bot] ACCESS REQUEST created user=${userId} (${msg.from.username ?? msg.from.first_name ?? 'anon'})`)
+      }
+      await telegram.sendMessage(chatId, '🔒 Permintaan akses dikirim ke admin. Mohon tunggu persetujuan.')
+    }
+    return
+  }
+
+  // Admin command → access management handler
+  if (isAdminCommand && text) {
+    const reply = await handleTelegramText(accessStore, msg.from, text, adminIdNum)
+    await telegram.sendMessage(chatId, reply.text, reply.keyboard, reply.inline_keyboard)
+    console.log(`[bot] ADMIN CMD user=${userId}: "${text}"`)
+    return
+  }
+
   if (!(await checkAccess(msg.from, chatId))) return
 
   // Compressed photo (Telegram always re-encodes to jpg)
@@ -223,9 +269,7 @@ async function handleMessage(msg: TgMessage): Promise<void> {
     return
   }
 
-  const text = msg.text?.trim()
   if (!text) return
-  const userId = String(msg.from.id)
   console.log(`[bot] TEXT user=${userId}: "${text.slice(0, 60)}"`)
 
   const result = await runAgent(agentFor(String(chatId)), { telegramUserId: userId, chatId: String(chatId), message: text, timezone: 'Asia/Jakarta' })
@@ -269,9 +313,38 @@ async function poll(): Promise<void> {
   const updates = await telegram.getUpdates(offset)
   for (const u of updates) {
     await saveOffset(u.update_id)
+
+    // Admin approval inline buttons (callback_query)
+    const cb = (u as unknown as { callback_query?: {
+      id: string
+      from: TgUser
+      data?: string
+      message?: { chat: { id: number } }
+    } }).callback_query
+    if (cb?.data) {
+      try {
+        const reply = await handleTelegramCallback(accessStore, cb.from, cb.data, Number(adminTelegramId))
+        await telegram.answerCallbackQuery(cb.id)
+        if (cb.message) {
+          await telegram.sendMessage(cb.message.chat.id, reply.text, undefined, reply.inline_keyboard)
+          // Notify the affected user
+          if (reply.accessUpdate) {
+            const note = reply.accessUpdate.status === 'APPROVED'
+              ? '✅ Akses kamu sudah disetujui admin. Selamat menggunakan bot!'
+              : '❌ Permintaan akses kamu ditolak admin.'
+            await telegram.sendMessage(reply.accessUpdate.userId, note)
+            console.log(`[bot] ACCESS ${reply.accessUpdate.status} notified user=${reply.accessUpdate.userId}`)
+          }
+        }
+      } catch (e) {
+        console.error('[bot] callback error:', e instanceof Error ? e.message : e)
+      }
+      if (!running) break
+      continue
+    }
+
     const m = u.message as Record<string, unknown> | undefined
     if (m) {
-      console.log(`[bot] RAW update keys: ${Object.keys(m).join(',')}`)
       await handleMessage(m as unknown as TgMessage).catch((e) => console.error('[bot] handler error:', e.message))
     }
     if (!running) break

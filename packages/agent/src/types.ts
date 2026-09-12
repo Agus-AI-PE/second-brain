@@ -27,7 +27,7 @@ export interface MemoryStore {
     telegramUserId: string
     query: string
     topK: number
-  }): Promise<Array<{ id: string; content: string; score: number; sourceType: string; createdAt: string }>>
+  }): Promise<Array<{ memoryId: string; content: string; score: number; sourceType: string; sourceUrl: string | null; createdAt: string }>>
   createReminder(input: {
     telegramUserId: string
     chatId: string

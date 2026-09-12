@@ -62,6 +62,14 @@ export class TelegramClient {
     await this.call('sendMessage', { chat_id: chatId, text, ...(keyboard ? { reply_markup: { keyboard, resize_keyboard: true } } : inlineKeyboard ? { reply_markup: { inline_keyboard: inlineKeyboard } } : {}) })
   }
 
+  async sendPhotoByUrl(chatId: number, photoUrl: string, caption?: string): Promise<void> {
+    await this.call('sendPhoto', {
+      chat_id: chatId,
+      photo: photoUrl,
+      ...(caption ? { caption } : {})
+    })
+  }
+
   async answerCallbackQuery(callbackQueryId: string): Promise<void> {
     await this.call('answerCallbackQuery', { callback_query_id: callbackQueryId })
   }

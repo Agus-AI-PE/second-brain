@@ -72,10 +72,11 @@ export class PrismaMemoryStore implements MemoryStore {
     // not the telegram id — resolve before filtering.
     const hits = await searchMemoryVectors(vector, user.id, input.topK)
     return hits.map((h) => ({
-      id: h.id,
+      memoryId: h.id,
       content: h.content,
       score: h.score,
       sourceType: h.meta?.sourceType ?? 'text',
+      sourceUrl: h.meta?.sourceUrl ?? null,
       createdAt: h.meta?.createdAt ?? new Date().toISOString()
     }))
   }

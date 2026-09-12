@@ -17,10 +17,16 @@ export type CreateAgentOptions = ToolDeps & {
    * choose the destination.
    */
   trustedChatId?: string
+  /**
+   * Attachment bound by the host for this request (archived file from Telegram).
+   * When set, save_memory automatically attaches sourceUrl + file link; the LLM
+   * cannot fabricate or omit it.
+   */
+  attachment?: { sourceUrl: string; sourceType: string }
 }
 
 export function createMemoryAgent(options: CreateAgentOptions): Agent {
-  const { store, embed, model, memory, scheduleReminder, trustedChatId } = options
+  const { store, embed, model, memory, scheduleReminder, trustedChatId, attachment } = options
   return new Agent({
     id: options.id ?? 'second-brain-assistant',
     model,
@@ -28,7 +34,7 @@ export function createMemoryAgent(options: CreateAgentOptions): Agent {
     maxTurns: 6,
     ...(memory ? { memory: { store: memory } } : {}),
     tools: [
-      createSaveMemoryTool({ store, embed }),
+      createSaveMemoryTool({ store, embed }, attachment),
       createSearchMemoryTool({ store, embed }),
       createSetReminderTool({ store, embed, scheduleReminder }, trustedChatId ?? '')
     ]

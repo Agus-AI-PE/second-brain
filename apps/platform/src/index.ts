@@ -2,7 +2,8 @@ import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '../../api/src/generated/prisma/index.js'
 import { Redis } from 'ioredis'
 import { MistralClient } from '@anvia/mistral'
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { createMemoryAgent, runAgent, createCompletionModel, ConversationMemoryStore, reminderQueue } from '@second-brain/agent'
 import type { Agent } from '@anvia/core'
 import { PrismaMemoryStore } from './memory-store.js'
@@ -34,21 +35,46 @@ const model = createCompletionModel({
 
 /**
  * Build a per-request agent: set_reminder is bound to the chat the message
- * actually came from (trusted), never to an LLM-chosen chatId.
+ * actually came from (trusted), never to an LLM-chosen chatId. When an
+ * archived attachment exists for this message, save_memory auto-links it.
  */
-function agentFor(chatId: string): Agent {
+function agentFor(chatId: string, attachment?: { sourceUrl: string; sourceType: string }): Agent {
   return createMemoryAgent({
     store,
     embed: embedText,
     model,
     memory: new ConversationMemoryStore({ redis, ttlSeconds: 24 * 60 * 60 }),
     trustedChatId: chatId,
+    attachment,
     scheduleReminder: async (job) => {
       const delay = Math.max(0, job.deliverAt.getTime() - Date.now())
       await reminderQueue(redis).add('deliver', job, { delay })
       console.log(`[reminder] scheduled id=${job.reminderId} at=${job.deliverAt.toISOString()} (delay ${Math.round(delay / 1000)}s)`)
     }
   }) as Agent
+}
+
+/** r2://bucket/key → short-lived presigned HTTPS URL for Telegram sendPhoto. */
+async function presignR2(uri: string, expiresSeconds = 3600): Promise<string | null> {
+  if (!uri.startsWith('r2://')) return null
+  const withoutScheme = uri.slice('r2://'.length)
+  const slash = withoutScheme.indexOf('/')
+  if (slash === -1) return null
+  const bucket = withoutScheme.slice(0, slash)
+  const key = withoutScheme.slice(slash + 1)
+  const cmd = new GetObjectCommand({ Bucket: bucket, Key: key })
+  try {
+    return await getSignedUrl(r2, cmd, { expiresIn: expiresSeconds })
+  } catch (err) {
+    console.error(`[r2] presign failed for ${key}: ${err instanceof Error ? err.message : err}`)
+    return null
+  }
+}
+
+/** Find the archived file link for a saved memory (r2:// URI) from Postgres. */
+async function fileUrlForMemory(memoryId: string): Promise<string | null> {
+  const m = await prisma.memory.findUnique({ where: { id: memoryId }, select: { sourceUrl: true } })
+  return m?.sourceUrl ?? null
 }
 
 const telegram = new TelegramClient(token)
@@ -159,7 +185,8 @@ async function handleAttachment(
       `Isi OCR file:\n${text.slice(0, 4000)}`
     ].join('\n\n')
 
-    const result = await runAgent(agentFor(chatId), { telegramUserId: userId, chatId, message: prompt, timezone: 'Asia/Jakarta' })
+    const archiveUri = `r2://${process.env.R2_BUCKET}/${key}`
+    const result = await runAgent(agentFor(chatId, { sourceUrl: archiveUri, sourceType: 'photo' }), { telegramUserId: userId, chatId, message: prompt, timezone: 'Asia/Jakarta' })
     if (!result.ok) throw new Error(result.error)
     console.log(`[bot] FILE reply user=${userId}: "${result.reply.slice(0, 60)}"`)
     await telegram.sendMessage(msg.chat.id, result.reply)
@@ -209,6 +236,22 @@ async function handleMessage(msg: TgMessage): Promise<void> {
   }
   console.log(`[bot] TEXT reply user=${userId}: "${result.reply.slice(0, 60)}"`)
   await telegram.sendMessage(chatId, result.reply)
+
+  // If the reply references archived images (r2://), send them back as photos.
+  const r2Uris = [...result.reply.matchAll(/r2:\/\/[^\s)\]]+/g)].map((m) => m[0])
+  if (r2Uris.length > 0) {
+    for (const uri of r2Uris.slice(0, 3)) {
+      const url = await presignR2(uri)
+      if (url) {
+        try {
+          await telegram.sendPhotoByUrl(chatId, url, '📎 File terarsip')
+          console.log(`[bot] IMAGE returned to chat=${chatId} (${uri.slice(0, 50)}...)`)
+        } catch (err) {
+          console.error(`[bot] sendPhoto failed: ${err instanceof Error ? err.message : err}`)
+        }
+      }
+    }
+  }
 }
 
 let offset: number | undefined

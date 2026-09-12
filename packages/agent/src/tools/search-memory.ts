@@ -13,10 +13,11 @@ export function createSearchMemoryTool({ store, embed }: ToolDeps) {
     }),
     outputSchema: z.object({
       results: z.array(z.object({
-        id: z.string(),
+        memoryId: z.string(),
         content: z.string(),
         score: z.number(),
         sourceType: z.string(),
+        sourceUrl: z.string().nullable().describe('Source link if the memory was saved from a URL or archived file (r2:// = archived image/PDF)'),
         createdAt: z.string()
       }))
     }),

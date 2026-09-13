@@ -1,0 +1,13 @@
+node_modules
+apps/*/node_modules
+packages/*/node_modules
+dist
+apps/*/dist
+generated
+apps/*/src/generated
+.env
+.env.*
+.git
+.progress
+*.log
+.DS_Store

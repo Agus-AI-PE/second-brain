@@ -1,7 +1,7 @@
 export type Intent = 'save' | 'search' | 'reminder' | 'chat'
 
-const savePattern = /\b(simpan|simpanlah|catat|ingat ini|remember this|save this)\b/i
-const searchPattern = /\b(cari|carikan|temukan|pernah kusimpan|apa yang kusimpan|search|find)\b/i
+const savePattern = /\b(simpan\w*|catat\w*|ingat ini|remember this|save this)\b/i
+const searchPattern = /\b(cari\w*|temukan|pernah kusimpan|apa yang kusimpan|search|find)\b/i
 const reminderPattern = /\b(ingatkan|remind(?:er)?|jangan lupa)\b/i
 
 export function detectIntent(text: string): Intent {

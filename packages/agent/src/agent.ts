@@ -11,9 +11,9 @@ export type CreateAgentOptions = ToolDeps & {
   model: CompletionModel
   id?: string
   /**
-   * Optional LLM security classifier run on every input before the main model.
-   * Use a cheap fast model (nano/flash tier). Regex guardrails run first and
-   * free; the judge catches paraphrased injections regex misses.
+   * Required LLM gatekeeper classifier run on every input before the main
+   * model. Classifies each message as memory/chat (pass) vs injection/off-scope
+   * (block). Use a cheap fast model (nano/flash tier).
    */
   judgeModel?: CompletionModel
   /** Optional conversation memory (multi-turn context). Host supplies storage. */

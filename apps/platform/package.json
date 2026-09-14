@@ -21,7 +21,8 @@
     "bullmq": "^6.3.4",
     "dotenv-cli": "^11.0.0",
     "ioredis": "^6.0.0",
-    "pg": "^8.23.0"
+    "pg": "^8.23.0",
+    "zod": "^4.6.2"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

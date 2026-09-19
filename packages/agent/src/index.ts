@@ -7,7 +7,8 @@ export type {
   MemoryRecord,
   MemoryStore,
   EmbedFn,
-  ToolDeps
+  ToolDeps,
+  ScheduleReminderFn
 } from './types.js'
 export { createMemoryAgent, runAgent } from './agent.js'
 export type { CreateAgentOptions, RunAgentResult } from './agent.js'

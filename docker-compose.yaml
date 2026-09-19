@@ -55,6 +55,22 @@ services:
         condition: service_healthy
     restart: "no"
 
+  api:
+    build: .
+    container_name: second-brain-api
+    restart: always
+    env_file: .env
+    ports:
+      - "${API_PORT:-3000}:3000"
+    command: ["pnpm", "--dir", "apps/api", "exec", "tsx", "src/index.ts"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+
   bot:
     build: .
     container_name: second-brain-bot

@@ -5,6 +5,8 @@ import { Hono } from 'hono'
 import { embeddingQueue } from './queue.js'
 import { deleteMemoryVector, searchMemoryVectors } from './vector.js'
 import { embedText } from './embed.js'
+import { adminApp } from './admin.js'
+import { Redis } from 'ioredis'
 
 const connectionString = process.env.DATABASE_URL
 if (!connectionString) throw new Error('DATABASE_URL is required')
@@ -54,6 +56,12 @@ const app = new Hono()
 
 app.get('/', (c) => c.text('Second Brain API'))
 app.get('/health', (c) => c.json({ ok: true }))
+
+// ponytail: admin dashboard di-mount bareng API; kalau nanti butuh auth per-admin
+// atau domain sendiri, pindah ke service terpisah.
+const adminRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', { maxRetriesPerRequest: null })
+app.get('/dashboard/', (c) => c.redirect('/dashboard'))
+app.route('/dashboard', adminApp(prisma, adminRedis))
 
 app.post('/memories', async (c) => {
   const body = await c.req.json<{

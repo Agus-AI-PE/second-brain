@@ -1,3 +1,13 @@
+# --- Dashboard build (Vite static, served by API at /dashboard) ---
+FROM node:22-slim AS dashboard
+RUN corepack enable
+WORKDIR /app
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY apps/dashboard/package.json apps/dashboard/
+RUN pnpm install --frozen-lockfile
+COPY apps/dashboard apps/dashboard
+RUN pnpm --dir apps/dashboard run build
+
 FROM node:22-slim
 
 RUN corepack enable \
@@ -15,5 +25,8 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm --dir apps/api exec prisma generate
+
+# Static dashboard served by the API at /dashboard
+COPY --from=dashboard /app/apps/dashboard/dist apps/dashboard/dist
 
 ENV NODE_ENV=production

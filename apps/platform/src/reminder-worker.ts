@@ -30,7 +30,14 @@ async function deliver(reminderId: string, chatId: string, text: string): Promis
   })
   if (claimed.count === 0) return false
   try {
-    await telegram.sendMessage(Number(chatId), `⏰ Pengingat: ${text}`)
+    // ponytail: template statis, variasi cukup dari 4 pembuka acak.
+  const openers = [
+    `⏰ Hei, ${text} ya!`,
+    `⏰ Hai, inget ${text}`,
+    `⏰ Psst, Ayo ${text}!`,
+    `⏰ Yuk! Sekarang waktunya ${text}`
+  ]
+  await telegram.sendMessage(Number(chatId), openers[Math.floor(Math.random() * openers.length)])
     await prisma.reminder.update({ where: { id: reminderId }, data: { status: 'SENT', sentAt: new Date() } })
     return true
   } catch (err) {

@@ -12,8 +12,8 @@
     "postinstall": "prisma skills sync || exit 0"
   },
   "dependencies": {
-    "@anvia/core": "^1.2.2",
-    "@anvia/mistral": "^1.1.3",
+    "@anvia/core": "^1.5.0",
+    "@anvia/mistral": "^1.1.4",
     "@anvia/qdrant": "^1.1.3",
     "@aws-sdk/client-s3": "^3.1131.0",
     "@hono/node-server": "^2.1.1",

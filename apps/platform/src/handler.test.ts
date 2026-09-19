@@ -55,7 +55,7 @@ describe('Telegram access flow', () => {
   it('gives admin access when admin starts the bot', async () => {
     const store = new FakeStore()
     const user = { id: 1, first_name: 'Admin' }
-    expect((await handleTelegramText(store, user, '/start', 1)).text).toContain('Menu admin:')
+    expect((await handleTelegramText(store, user, '/start', 1)).text).toContain("I'm your second brain")
     expect((await handleTelegramText(store, user, 'hi', 1)).text).toContain('memory siap')
   })
 

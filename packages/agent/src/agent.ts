@@ -1,5 +1,7 @@
 import { Agent } from '@anvia/core'
 import type { CompletionModel, MemoryStore as AnviaMemoryStore } from '@anvia/core'
+import type { McpServer } from '@anvia/core/mcp'
+import type { AgentObservabilityOptions } from '@anvia/core/observability'
 import { createSaveMemoryTool } from './tools/save-memory.js'
 import { createSearchMemoryTool } from './tools/search-memory.js'
 import { createSetReminderTool } from './tools/set-reminder.js'
@@ -30,10 +32,17 @@ export type CreateAgentOptions = ToolDeps & {
    * cannot fabricate or omit it.
    */
   attachment?: { sourceUrl: string; sourceType: string }
+  /**
+   * MCP servers exposing save_memory/search_memory/set_reminder. When set,
+   * in-process tools are replaced by MCP server tools (PRD: standardized
+   * storage layer).
+   */
+  mcpServers?: readonly McpServer[]
+  observability?: AgentObservabilityOptions
 }
 
 export function createMemoryAgent(options: CreateAgentOptions): Agent {
-  const { store, embed, model, memory, scheduleReminder, trustedChatId, attachment, judgeModel } = options
+  const { store, embed, model, memory, scheduleReminder, trustedChatId, attachment, judgeModel, mcpServers, observability } = options
   return new Agent({
     id: options.id ?? 'second-brain-assistant',
     model,
@@ -43,11 +52,15 @@ export function createMemoryAgent(options: CreateAgentOptions): Agent {
     maxTurns: 6,
     guardrails: createMemoryGuardrailPolicy(judgeModel),
     ...(memory ? { memory: { store: memory } } : {}),
-    tools: [
-      createSaveMemoryTool({ store, embed }, attachment),
-      createSearchMemoryTool({ store, embed }),
-      createSetReminderTool({ store, embed, scheduleReminder }, trustedChatId ?? '')
-    ]
+    ...(observability ? { observability } : {}),
+    ...(mcpServers ? { mcpServers: [...mcpServers] } : {}),
+    tools: mcpServers
+      ? []
+      : [
+          createSaveMemoryTool({ store, embed }, attachment),
+          createSearchMemoryTool({ store, embed }),
+          createSetReminderTool({ store, embed, scheduleReminder }, trustedChatId ?? '')
+        ]
   }) as Agent
 }
 

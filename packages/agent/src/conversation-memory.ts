@@ -39,12 +39,14 @@ export class ConversationMemoryStore implements AnviaMemoryStore {
   async load(options: MemoryLoadOptions): Promise<Message[]> {
     const raw = await this.redis.get(this.key(options.scope))
     if (!raw) return []
+    let messages: Message[]
     try {
       const parsed = JSON.parse(raw) as Message[]
-      return Array.isArray(parsed) ? parsed : []
+      messages = Array.isArray(parsed) ? parsed : []
     } catch {
       return []
     }
+    return sanitizeHistory(messages)
   }
 
   async append(options: MemoryAppendOptions): Promise<void> {
@@ -58,4 +60,56 @@ export class ConversationMemoryStore implements AnviaMemoryStore {
   async clear(options: MemoryClearOptions): Promise<void> {
     await this.redis.del(this.key(options.scope))
   }
+}
+
+/**
+ * Drop dangling tool-call/tool-result pairs so history is always a valid
+ * chat-completions sequence. Providers (e.g. OpenAI gateways) return HTTP 400
+ * for an assistant message with tool_calls whose matching tool result is
+ * missing — which trimming (maxMessages) can produce.
+ */
+function sanitizeHistory(messages: Message[]): Message[] {
+  const toolCallIds = new Set(
+    messages
+      .filter((m) => m.role === 'assistant' && Array.isArray(m.content))
+      .flatMap((m) => (m.content as Array<{ type: string; toolCallId?: string; callId?: string }>))
+      .filter((p) => p.type === 'tool-call')
+      .map((p) => p.toolCallId ?? p.callId)
+      .filter((id): id is string => typeof id === 'string')
+  )
+  const kept: Message[] = []
+  for (const m of messages) {
+    if (m.role === 'assistant' && Array.isArray(m.content) && m.content.some((p: { type: string }) => p.type === 'tool-call')) {
+      kept.push(m)
+      continue
+    }
+    if (m.role === 'tool' && Array.isArray(m.content)) {
+      const hasMatchingCall = m.content.some(
+        (p: { type: string; toolCallId?: string }) => p.type === 'tool-result' && typeof p.toolCallId === 'string' && toolCallIds.has(p.toolCallId)
+      )
+      if (!hasMatchingCall) continue
+    }
+    kept.push(m)
+  }
+  // Second pass: drop assistant tool-calls whose result was dropped.
+  const resultIds = new Set(
+    kept
+      .filter((m) => m.role === 'tool' && Array.isArray(m.content))
+      .flatMap((m) => (m.content as Array<{ type: string; toolCallId?: string }>))
+      .filter((p) => p.type === 'tool-result' && typeof p.toolCallId === 'string')
+      .map((p) => p.toolCallId as string)
+  )
+  return kept.flatMap((m) => {
+    if (m.role !== 'assistant' || !Array.isArray(m.content)) return [m]
+    const parts = (m.content as Array<{ type: string; toolCallId?: string; callId?: string; text?: string }>)
+    const toolParts = parts.filter((p) => p.type === 'tool-call')
+    const orphan = toolParts.filter((p) => {
+      const id = p.toolCallId ?? p.callId
+      return typeof id === 'string' && !resultIds.has(id)
+    })
+    if (orphan.length === 0) return [m]
+    const rest = parts.filter((p) => !orphan.includes(p))
+    if (rest.length === 0) return []
+    return [{ ...m, content: rest }]
+  })
 }

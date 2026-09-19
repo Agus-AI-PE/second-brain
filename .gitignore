@@ -6,5 +6,6 @@ generated/
 *.log
 .DS_Store
 PROGRESS.md
+*.tsbuildinfo
 
 .progress/

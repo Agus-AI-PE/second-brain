@@ -25,7 +25,11 @@ export function createMcpClient(input: {
   const { command, args } = mcpServerCommand()
   return new McpClient({
     name: 'second-brain-memory',
-    transport: { type: 'stdio', command, args, env }
+    transport: { type: 'stdio', command, args, env },
+    // Our MCP server uses @modelcontextprotocol/server serveStdio (2025-era).
+    // The client default pins the 2026-07-28 revision with no fallback, which
+    // makes version negotiation fail; allow fallback instead.
+    versionNegotiation: { mode: 'auto' }
   })
 }
 

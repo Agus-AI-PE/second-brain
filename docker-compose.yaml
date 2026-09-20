@@ -113,7 +113,141 @@ services:
       qdrant:
         condition: service_healthy
 
+  # --- Anvia Lens (self-host observability; opsional) ---
+  # Pantau di http://localhost:${LENS_WEB_PORT:-4010} — akun pertama = owner.
+  # Matikan dengan: docker compose --profile lens up  (tanpa lens: docker compose up -d)
+  lens-postgres:
+    image: postgres:17-alpine
+    profiles: ["lens"]
+    container_name: lens-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: lens
+      POSTGRES_USER: lens
+      POSTGRES_PASSWORD: ${LENS_POSTGRES_PASSWORD:?Set LENS_POSTGRES_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lens -d lens"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - lens-pgdata:/var/lib/postgresql/data
+
+  lens-redis:
+    image: redis:8-alpine
+    profiles: ["lens"]
+    container_name: lens-redis
+    restart: always
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory-policy
+      - noeviction
+      - --requirepass
+      - ${LENS_REDIS_PASSWORD:?Set LENS_REDIS_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD-SHELL", 'redis-cli --no-auth-warning -a "$$LENS_REDIS_PASSWORD" ping | grep PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - lens-redisdata:/data
+
+  lens-clickhouse:
+    image: clickhouse/clickhouse-server:26.4-alpine
+    profiles: ["lens"]
+    container_name: lens-clickhouse
+    restart: always
+    environment:
+      CLICKHOUSE_DB: lens
+      CLICKHOUSE_USER: lens
+      CLICKHOUSE_PASSWORD: ${LENS_CLICKHOUSE_PASSWORD:?Set LENS_CLICKHOUSE_PASSWORD in .env}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'clickhouse-client --user lens --password "$$LENS_CLICKHOUSE_PASSWORD" --query ''SELECT 1''',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - lens-clickhousedata:/var/lib/clickhouse
+
+  lens-migrate:
+    image: ghcr.io/anvia-hq/lens:${LENS_VERSION:-0.4.1}
+    profiles: ["lens"]
+    container_name: lens-migrate
+    restart: "no"
+    environment: &lens-app-env
+      NODE_ENV: production
+      PUBLIC_APP_URL: ${LENS_PUBLIC_APP_URL:-http://localhost:4010}
+      API_PORT: 3001
+      WEB_ORIGIN: ${LENS_WEB_ORIGIN:-http://localhost:4010}
+      POSTGRES_URL: postgresql://lens:${LENS_POSTGRES_PASSWORD}@lens-postgres:5432/lens
+      POSTGRES_MAX_CONNECTIONS: 10
+      CLICKHOUSE_URL: http://lens-clickhouse:8123
+      CLICKHOUSE_DATABASE: lens
+      CLICKHOUSE_USERNAME: lens
+      CLICKHOUSE_PASSWORD: ${LENS_CLICKHOUSE_PASSWORD}
+      REDIS_URL: redis://:${LENS_REDIS_PASSWORD}@lens-redis:6379
+      BETTER_AUTH_SECRET: ${LENS_BETTER_AUTH_SECRET:?Set LENS_BETTER_AUTH_SECRET in .env}
+      INGESTION_KEY_PEPPER: ${LENS_INGESTION_KEY_PEPPER:?Set LENS_INGESTION_KEY_PEPPER in .env}
+    command: ["node", "packages/db/dist/migrate.js"]
+    depends_on:
+      lens-postgres:
+        condition: service_healthy
+      lens-clickhouse:
+        condition: service_healthy
+
+  lens-api:
+    image: ghcr.io/anvia-hq/lens:${LENS_VERSION:-0.4.1}
+    profiles: ["lens"]
+    container_name: lens-api
+    restart: always
+    environment: *lens-app-env
+    depends_on:
+      lens-migrate:
+        condition: service_completed_successfully
+      lens-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3001/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  lens-worker:
+    image: ghcr.io/anvia-hq/lens:${LENS_VERSION:-0.4.1}
+    profiles: ["lens"]
+    container_name: lens-worker
+    restart: always
+    environment: *lens-app-env
+    command: ["node", "apps/worker/dist/index.js"]
+    depends_on:
+      lens-migrate:
+        condition: service_completed_successfully
+      lens-redis:
+        condition: service_healthy
+    stop_grace_period: 30s
+
+  lens-web:
+    image: ghcr.io/anvia-hq/lens-web:${LENS_VERSION:-0.4.1}
+    profiles: ["lens"]
+    container_name: lens-web
+    restart: always
+    depends_on:
+      lens-api:
+        condition: service_healthy
+    ports:
+      - "${LENS_WEB_PORT:-4010}:8080"
+
 volumes:
   pgdata:
   redisdata:
   qdrantdata:
+  lens-pgdata:
+  lens-redisdata:
+  lens-clickhousedata:

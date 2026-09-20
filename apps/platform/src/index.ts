@@ -372,26 +372,29 @@ async function handleMessage(event: ChannelEvent<TelegramUpdate>, address: Chann
       return
     }
     console.log(`[bot] TEXT reply user=${userId}: "${result.reply.slice(0, 60)}"`)
-    await reply(address, { text: result.reply })
 
-    // If the reply references archived images (r2://), send them back as photos.
+    // Archived files (r2://): swap the internal URI for a short download link.
+    // Neither the r2:// URI nor the long SigV4 URL is shown to the user.
     const r2Uris = [...result.reply.matchAll(/r2:\/\/[^\s)\]]+/g)].map((m) => m[0])
-    if (r2Uris.length > 0) {
-      for (const uri of r2Uris.slice(0, 3)) {
-        const url = await presignR2(uri)
-        if (url) {
-          try {
-            await channel.send(address, {
-              text: '',
-              attachments: [{ type: 'image', mediaType: 'image/jpeg', filename: 'archive.jpg', source: { type: 'url', url } }]
-            })
-            console.log(`[bot] IMAGE returned to chat=${chatId} (${uri.slice(0, 50)}...)`)
-          } catch (err) {
-            console.error(`[bot] sendPhoto failed: ${err instanceof Error ? err.message : err}`)
-          }
-        }
-      }
+    if (r2Uris.length === 0) {
+      await reply(address, { text: result.reply })
+      return
     }
+
+    const files = await Promise.all(
+      r2Uris.slice(0, 3).map(async (uri) => {
+        const filename = uri.slice(uri.lastIndexOf('/') + 1)
+        return { uri, filename, url: await presignR2(uri) }
+      })
+    )
+    let cleanReply = result.reply
+    for (const f of files) cleanReply = cleanReply.replace(f.uri, '')
+    cleanReply = cleanReply.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+
+    const links = files.filter((f) => f.url).map((f) => `📄 ${f.filename} — ${f.url}`)
+    if (links.length > 0) cleanReply = `${cleanReply}\n\n${links.join('\n')}`
+    console.log(`[bot] FILE link(s) returned chat=${chatId} (${files.length})`)
+    await reply(address, { text: cleanReply })
   } finally {
     await teardownRequest()
   }

@@ -146,6 +146,8 @@ services:
       - noeviction
       - --requirepass
       - ${LENS_REDIS_PASSWORD:?Set LENS_REDIS_PASSWORD in .env}
+    environment:
+      LENS_REDIS_PASSWORD: ${LENS_REDIS_PASSWORD}
     healthcheck:
       test: ["CMD-SHELL", 'redis-cli --no-auth-warning -a "$$LENS_REDIS_PASSWORD" ping | grep PONG']
       interval: 5s
@@ -163,6 +165,7 @@ services:
       CLICKHOUSE_DB: lens
       CLICKHOUSE_USER: lens
       CLICKHOUSE_PASSWORD: ${LENS_CLICKHOUSE_PASSWORD:?Set LENS_CLICKHOUSE_PASSWORD in .env}
+      LENS_CLICKHOUSE_PASSWORD: ${LENS_CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     healthcheck:
       test:
@@ -208,6 +211,9 @@ services:
     container_name: lens-api
     restart: always
     environment: *lens-app-env
+    networks:
+      default:
+        aliases: ["api"]
     depends_on:
       lens-migrate:
         condition: service_completed_successfully

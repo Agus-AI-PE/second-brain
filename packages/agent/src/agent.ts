@@ -1,5 +1,6 @@
 import { Agent } from '@anvia/core'
 import type { CompletionModel, MemoryStore as AnviaMemoryStore } from '@anvia/core'
+import { createSummaryMemoryCompactor } from '@anvia/core/memory'
 import type { McpServer } from '@anvia/core/mcp'
 import type { AgentObservabilityOptions } from '@anvia/core/observability'
 import { createSaveMemoryTool } from './tools/save-memory.js'
@@ -39,10 +40,31 @@ export type CreateAgentOptions = ToolDeps & {
    */
   mcpServers?: readonly McpServer[]
   observability?: AgentObservabilityOptions
+  /**
+   * Conversation compaction policy. Long history is summarized once the
+   * projected context exceeds `afterTokens`, keeping the last `recentTurns`
+   * turns verbatim. Pass `false` to disable; requires a memory store with the
+   * compaction capability.
+   */
+  compaction?: { afterTokens?: number; recentTurns?: number } | false
 }
+
+/** Summarize history once context projects beyond ~12k tokens. */
+const DEFAULT_COMPACTION_TOKENS = 12_000
 
 export function createMemoryAgent(options: CreateAgentOptions): Agent {
   const { store, embed, model, memory, scheduleReminder, trustedChatId, attachment, judgeModel, mcpServers, observability } = options
+  const compactionConfig = options.compaction === false ? undefined : (options.compaction ?? {})
+  // Compaction needs both the policy and the store capability (revision +
+  // atomic prefix replacement, implemented by ConversationMemoryStore).
+  const compaction = memory?.compaction && compactionConfig !== undefined
+    ? {
+        trigger: { afterTokens: compactionConfig.afterTokens ?? DEFAULT_COMPACTION_TOKENS },
+        retention: { recentTurns: compactionConfig.recentTurns ?? 2 },
+        compactor: createSummaryMemoryCompactor({ model, maxTokens: 600, temperature: 0 }),
+        conflictRetries: { maxAttempts: 3 }
+      }
+    : undefined
   return new Agent({
     id: options.id ?? 'second-brain-assistant',
     model,
@@ -51,7 +73,7 @@ export function createMemoryAgent(options: CreateAgentOptions): Agent {
     maxTokens: 800,
     maxTurns: 6,
     guardrails: createMemoryGuardrailPolicy(judgeModel),
-    ...(memory ? { memory: { store: memory } } : {}),
+    ...(memory ? { memory: { store: memory, ...(compaction ? { compaction } : {}) } } : {}),
     ...(observability ? { observability } : {}),
     ...(mcpServers ? { mcpServers: [...mcpServers] } : {}),
     tools: mcpServers

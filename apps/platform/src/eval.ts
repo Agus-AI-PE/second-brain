@@ -87,7 +87,7 @@ async function main(): Promise<void> {
   const result = await runEvalSuite({
     name: 'rag-recall',
     cases: CASES.map((c) => ({ id: c.id, input: c.input, expected: c.expected })),
-    target: agentEvalTarget<string>({
+    target: agentEvalTarget<string, string, { output: string }>({
       agent,
       // Same context header the bot builds in runAgent — tools need the
       // telegramUserId binding from it.

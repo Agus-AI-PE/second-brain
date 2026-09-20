@@ -300,7 +300,7 @@ async function handleMessage(event: ChannelEvent<TelegramUpdate>, address: Chann
     }
     const code = await createLoginCode(redis, userId)
     await reply(address, {
-      text: `🔐 Kode login dashboard (berlaku 5 menit):\n\n${code}\n\nMasukkan di ${process.env.DASHBOARD_URL ?? 'http://localhost:5173'}`
+      text: `🔐 Kode login dashboard (berlaku 5 menit):\n\n${code}\n\nMasukkan di ${process.env.DASHBOARD_URL ?? 'http://localhost:5173'}/dashboard`
     })
     console.log(`[bot] DASHBOARD code issued user=${userId}`)
     return

@@ -15,7 +15,10 @@ export function createMcpClient(input: {
   chatId: string
   attachment?: { sourceUrl: string; sourceType: string }
 }): McpClient {
+  // stdio transport REPLACES the child environment, so inherit the parent's
+  // (DATABASE_URL, EMBED_URL, ...) and layer the trusted SB_* context on top.
   const env: Record<string, string> = {
+    ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined)),
     SB_TELEGRAM_USER_ID: input.telegramUserId,
     SB_CHAT_ID: input.chatId,
     ...(input.attachment

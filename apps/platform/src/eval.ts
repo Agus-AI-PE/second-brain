@@ -99,7 +99,9 @@ async function main(): Promise<void> {
           `Current date: ${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })} (Asia/Jakarta)`
         ].join('\n') + `\n\nUser: ${input}`,
         session: { sessionId: `eval:${testCase.id}:${Date.now()}`, userId: ADMIN_ID }
-      })
+      }),
+      // Metric `contains()` and the console reporter read `.output`.
+      output: ({ response }) => ({ output: response.text })
     }),
     metrics: [contains()],
     reporters: [...(lens.enabled ? [lens.evalReporter()] : []), consoleReporter]
@@ -112,7 +114,12 @@ async function main(): Promise<void> {
   console.log('[eval] cleaned up seeds')
   await prisma.$disconnect()
   await redis.quit()
-  if (lens.enabled) await lens.close()
+  if (lens.enabled) {
+    // Observability must never fail the eval run (bad keys / Lens down).
+    await lens.close().catch((err) => {
+      console.warn('[eval] lens close failed (ignored):', err instanceof Error ? err.message : err)
+    })
+  }
 }
 
 main().catch((err) => {

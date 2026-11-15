@@ -9,6 +9,9 @@ export type Reply = {
   accessUpdate?: { userId: number; status: 'APPROVED' | 'DENIED' }
 }
 
+// Channel library hard caps a reply at 5 actions with unique, non-empty IDs.
+export const MAX_MESSAGE_ACTIONS = 5
+
 async function statusActions(
   store: AccessStore,
   status: AccessRecord['accessStatus']
@@ -17,11 +20,14 @@ async function statusActions(
   const actions: Array<{ id: string; label: string }> = []
   for (const user of users) {
     if (status === 'PENDING') {
+      if (actions.length + 2 > MAX_MESSAGE_ACTIONS) break
       actions.push({ id: `approve_user:${user.telegramUserId}`, label: `✓ ${user.displayName ?? user.telegramUserId}` })
       actions.push({ id: `deny_user:${user.telegramUserId}`, label: '✕ Tolak' })
     } else {
-      actions.push({ id: 'noop', label: user.displayName ?? String(user.telegramUserId) })
+      // IDs must be unique per user, not a shared 'noop'.
+      actions.push({ id: `noop:${user.telegramUserId}`, label: user.displayName ?? String(user.telegramUserId) })
     }
+    if (actions.length >= MAX_MESSAGE_ACTIONS) break
   }
   return actions
 }
@@ -33,7 +39,7 @@ export async function handleTelegramCallback(
   adminTelegramId: number
 ): Promise<Reply> {
   if (user.id !== adminTelegramId) return { text: 'Aksi tidak diizinkan.' }
-  if (data === 'noop') return { text: 'Tidak ada aksi.' }
+  if (data === 'noop' || data.startsWith('noop:')) return { text: 'Tidak ada aksi.' }
   const userAction = data.match(/^(approve_user|deny_user):(\d+)$/)
   if (userAction) {
     const updated =
@@ -92,10 +98,11 @@ export async function handleTelegramText(
       APPROVED: 'approved',
       DENIED: 'denied'
     } as const
-    const users = await store.listByStatus(status)
+    const actions = await statusActions(store, status)
+    if (actions.length === 0) return { text: `Tidak ada user ${labels[status]}.` }
     return {
       text: `User ${labels[status]}:`,
-      actions: await statusActions(store, status)
+      actions
     }
   }
   if (!canUseMemory(current))

@@ -64,6 +64,30 @@ describe('Telegram access flow', () => {
     const reply = await handleTelegramCallback(store, { id: 1 }, 'noop', 1)
     expect(reply.text).toContain('Tidak ada')
   })
+  it('returns no actions when the status list is empty', async () => {
+    const store = new FakeStore()
+    const reply = await handleTelegramText(store, { id: 1, first_name: 'Admin' }, '/pending', 1)
+    expect(reply.text).toContain('Tidak ada user pending')
+    expect(reply.actions).toBeUndefined()
+  })
+  it('gives unique action ids for approved/denied lists', async () => {
+    const store = new FakeStore()
+    store.users.set(42, { telegramUserId: 42, role: 'USER', accessStatus: 'APPROVED' })
+    store.users.set(43, { telegramUserId: 43, role: 'USER', accessStatus: 'APPROVED' })
+    const reply = await handleTelegramText(store, { id: 1, first_name: 'Admin' }, '/approve', 1)
+    const ids = reply.actions?.map((action) => action.id) ?? []
+    expect(ids).toEqual(['noop:42', 'noop:43'])
+  })
+  it('caps pending actions at the channel limit', async () => {
+    const store = new FakeStore()
+    for (let id = 100; id < 106; id++) {
+      store.users.set(id, { telegramUserId: id, role: 'USER', accessStatus: 'PENDING' })
+    }
+    const reply = await handleTelegramText(store, { id: 1, first_name: 'Admin' }, '/pending', 1)
+    expect((reply.actions?.length ?? 0)).toBe(4)
+    expect(reply.actions?.[0].id).toBe('approve_user:100')
+    expect(reply.actions?.[3].id).toBe('deny_user:101')
+  })
   it('saves text and searches memory for approved users', async () => {
     const store = new FakeStore()
     store.users.set(42, { telegramUserId: 42, role: 'USER', accessStatus: 'APPROVED' })

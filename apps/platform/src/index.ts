@@ -334,7 +334,7 @@ async function handleMessage(event: ChannelEvent<TelegramUpdate>, address: Chann
   // Admin command → access management handler
   if (isAdminCommand && text) {
     const r = await handleTelegramText(accessStore, from, text, adminIdNum)
-    await reply(address, { text: r.text, actions: r.actions })
+    await reply(address, { text: r.text, actions: r.actions?.length ? r.actions : undefined })
     console.log(`[bot] ADMIN CMD user=${userId}: "${text}"`)
     return
   }
@@ -432,7 +432,7 @@ async function onEvent(event: ChannelEvent<TelegramUpdate>): Promise<void> {
     if (!from) return
     try {
       const r = await handleTelegramCallback(accessStore, from, event.actionId, Number(adminTelegramId))
-      await reply(address, { text: r.text, actions: r.actions })
+      await reply(address, { text: r.text, actions: r.actions?.length ? r.actions : undefined })
       if (r.accessUpdate) {
         const note = r.accessUpdate.status === 'APPROVED'
           ? '✅ Akses kamu sudah disetujui admin. Selamat menggunakan bot!'

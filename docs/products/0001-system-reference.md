@@ -45,7 +45,7 @@ Second Brain: personal knowledge system lewat Telegram bot. Catatan/URL/foto/dok
 ## Alur data
 
 1. User kirim note/URL/foto/dokumen ke bot Telegram.
-2. Access control: user baru `PENDING`; admin approve/deny via inline button bot atau `/dashboard`.
+2. Access control: user baru `PENDING`; admin approve/deny via inline button bot atau `/dashboard`. Inline actions dibatasi validasi `@anvia/channel`: ID unik, maks 5, array kosong tidak boleh — lihat `bugs/0005`.
 3. Bot persist row `Memory` dan enqueue job embedding (frasa eksplisit "simpan"/"remember this", atau intent hasil klasifikasi agent). URL disave → scrape server-side.
 4. Worker: download file Telegram → Mistral OCR → arsip R2 → embed OpenRouter → upsert vektor Qdrant.
 5. Search: bot embed query, search Qdrant filter `userId`, agent menjawab dari hasil dalam bahasa user.

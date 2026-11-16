@@ -62,7 +62,13 @@ async function main(): Promise<void> {
       message,
       timezone: process.env.TZ ?? 'Asia/Jakarta'
     })
-    console.log(result.ok ? `\nagent> ${result.reply}` : `\n[cli] ERROR: ${result.error}`)
+    if (result.ok) {
+      console.log(`\nagent> ${result.reply}`)
+    } else if (result.kind === 'blocked') {
+      console.log(`\n[cli] BLOCKED: ${result.message}`)
+    } else {
+      console.log(`\n[cli] ERROR: ${result.message}`)
+    }
   }
 
   rl.close()

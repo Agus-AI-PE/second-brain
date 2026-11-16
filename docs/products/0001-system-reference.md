@@ -55,7 +55,7 @@ Second Brain: personal knowledge system lewat Telegram bot. Catatan/URL/foto/dok
 ## Kontrak penting
 
 - **MemoryStore**: satu kontrak, satu implementasi (Prisma + Qdrant + BullMQ). Semua akses data lewat ini.
-- **Agent**: `createMemoryAgent({ store, embed, model, memory, trustedChatId, scheduleReminder })` → `runAgent()`. Tools tahu `chatId` dari trusted binding, bukan dari LLM.
+- **Agent**: `createMemoryAgent({ store, embed, model, memory, trustedChatId, scheduleReminder })` → `runAgent()`. Tools tahu `chatId` dari trusted binding, bukan dari LLM. Retry: model call di-retry 3× (500ms→2s backoff) untuk error transient (`retries` opsi Agent); `runAgent` tambah 1 retry ekstra untuk transient yang lolos deteksi core (mis. CF challenge page berbentuk HTTP 200 HTML, lihat `bugs/0001`). `RunAgentResult` membedakan `kind: 'blocked'` (guardrail, message user-safe ditampilkan apa adanya) vs `kind: 'error'` (balasan non-error "kirim ulang", tanpa ❌). Boot bot melakukan warm-up ping model (silent, log-only).
 - **Conversation memory**: Redis per user, TTL 24 jam, maks 40 pesan; time context (WIB + aturan relative-time) disuntik per-turn.
 - **Lens**: `LensClient({ optional: true })` — disabled kalau env `ANVIA_LENS_*` kosong; flush per-request, close di shutdown.
 

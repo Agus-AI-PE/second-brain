@@ -6,6 +6,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { createMemoryAgent, runAgent, createCompletionModel, ConversationMemoryStore, reminderQueue } from '@second-brain/agent'
 import type { Agent } from '@anvia/core'
+import { generateCompletion } from '@anvia/core'
 import type { McpServer } from '@anvia/core/mcp'
 import { McpClientGroup } from '@anvia/mcp'
 import { LensClient } from '@anvia/lens'
@@ -265,7 +266,14 @@ async function handleAttachment(
     const sourceType = opts.mime === 'application/pdf' ? 'pdf' : opts.mime.startsWith('image/') ? 'photo' : 'document'
     const agent = await agentFor(chatId, userId, { sourceUrl: archiveUri, sourceType })
     const result = await runAgent(agent, { telegramUserId: userId, chatId, message: prompt, timezone: 'Asia/Jakarta' })
-    if (!result.ok) throw new Error(result.error)
+    if (!result.ok) {
+      if (result.kind === 'blocked') {
+        // Guardrail verdict about the caption — show it instead of the generic file error.
+        await reply(address, { text: result.message })
+        return
+      }
+      throw new Error(result.message)
+    }
     console.log(`[bot] FILE reply user=${userId}: "${result.reply.slice(0, 60)}"`)
     await reply(address, { text: result.reply })
   } catch (err) {
@@ -363,12 +371,22 @@ async function handleMessage(event: ChannelEvent<TelegramUpdate>, address: Chann
   if (!text) return
   console.log(`[bot] TEXT user=${userId}: "${text.slice(0, 60)}"`)
 
+  // Typing indicator expires ~5s after sending; keep it alive while the
+  // agent (and its internal retries) work so long runs don't look frozen.
+  const typingTimer = setInterval(() => { channel.showTyping(address).catch(() => {}) }, 4000)
   try {
     const agent = await agentFor(chatId, userId)
     const result = await runAgent(agent, { telegramUserId: userId, chatId, message: text, timezone: 'Asia/Jakarta' })
     if (!result.ok) {
-      console.error(`[bot] TEXT FAILED user=${userId}: ${result.error}`)
-      await reply(address, { text: '❌ Terjadi kesalahan. Coba lagi.' })
+      console.error(`[bot] TEXT FAILED user=${userId}: ${result.message}`)
+      // Guardrail blocks carry their own user-safe message. Other failures
+      // (already retried in runAgent) shouldn't read as a hard error — the
+      // user just needs to resend, which usually works.
+      await reply(address, {
+        text: result.kind === 'blocked'
+          ? result.message
+          : '⏳ Belum berhasil memproses pesanmu sekarang. Coba kirim ulang sebentar lagi ya.'
+      })
       return
     }
     console.log(`[bot] TEXT reply user=${userId}: "${result.reply.slice(0, 60)}"`)
@@ -396,6 +414,7 @@ async function handleMessage(event: ChannelEvent<TelegramUpdate>, address: Chann
     console.log(`[bot] FILE link(s) returned chat=${chatId} (${files.length})`)
     await reply(address, { text: cleanReply })
   } finally {
+    clearInterval(typingTimer)
     await teardownRequest()
   }
 }
@@ -461,8 +480,25 @@ async function onEvent(event: ChannelEvent<TelegramUpdate>): Promise<void> {
   // message-edited / message-deleted / reaction: not used by this bot.
 }
 
+/**
+ * Warm-up: one tiny model call right after boot so the user's first message
+ * doesn't hit a cold provider connection (first-call fetch/Cloudflare hiccups,
+ * docs/bugs/0001). Silent — failures are logged only, never shown to the user.
+ */
+async function warmUpModel(): Promise<void> {
+  const startedAt = Date.now()
+  try {
+    await generateCompletion({ model, instructions: 'Reply with the single word: ready.', prompt: 'ready?' })
+    console.log(`[bot] model warm-up ok (${Date.now() - startedAt}ms)`)
+  } catch (err) {
+    console.error(`[bot] model warm-up failed (non-fatal): ${err instanceof Error ? err.message : err}`)
+  }
+}
+
 await channel.start(onEvent)
 console.log('Telegram agent bot (@anvia/telegram channel) started')
+// Fire-and-forget: don't block the bot loop on the provider handshake.
+void warmUpModel()
 // Keep the process alive; the channel polls internally.
 while (running) {
   await new Promise((r) => setTimeout(r, 500))
